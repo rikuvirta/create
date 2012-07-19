@@ -10,6 +10,7 @@
     options: {
       // Whether to use localstorage
       localStorage: false,
+      removeLocalstorageOnIgnore: true,
       // VIE instance to use for storage handling
       vie: null,
       // URL callback for Backbone.sync
@@ -108,6 +109,7 @@
     _bindEditables: function () {
       var widget = this;
       var restorables = [];
+      var restorer;
 
       widget.element.bind('midgardeditablechanged', function (event, options) {
         if (_.indexOf(widget.changedModels, options.instance) === -1) {
@@ -125,6 +127,11 @@
       widget.element.bind('midgardeditableenable', function (event, options) {
         jQuery('#midgardcreate-save').button({disabled: true});
         jQuery('#midgardcreate-save').show();
+
+        if (!options.instance._originalAttributes) {
+          options.instance._originalAttributes = _.clone(options.instance.attributes);
+        }
+
         if (!options.instance.isNew() && widget._checkLocal(options.instance)) {
           // We have locally-stored modifications, user needs to be asked
           restorables.push(options.instance);
@@ -140,10 +147,13 @@
       widget.element.bind('midgardcreatestatechange', function (event, options) {
         if (options.state === 'browse' || restorables.length === 0) {
           restorables = [];
+          if (restorer) {
+            restorer.close();
+          }
           return;
         }
         
-        jQuery('body').data('midgardCreate').showNotification({
+        restorer = jQuery('body').data('midgardCreate').showNotification({
           bindTo: '#midgardcreate-edit a',
           gravity: 'TR',
           body: restorables.length + " items on this page have local modifications",
@@ -153,10 +163,11 @@
               name: 'restore',
               label: 'Restore',
               cb: function() {
-                _.each(restorables, function(instance) {
+                _.each(restorables, function (instance) {
                   widget._readLocal(instance);
                 });
                 restorables = [];
+                restorer = null;
               },
               className: 'create-ui-btn'
             },
@@ -164,9 +175,14 @@
               name: 'ignore',
               label: 'Ignore',
               cb: function(event, notification) {
-                // TODO: Clear from localStorage?
+                if (widget.options.removeLocalstorageOnIgnore) {
+                  _.each(restorables, function (instance) {
+                    widget._removeLocal(instance);
+                  });
+                }
                 notification.close();
                 restorables = [];
+                restorer = null;
               },
               className: 'create-ui-btn'
             }
@@ -186,6 +202,10 @@
 
     _saveRemote: function (options) {
       var widget = this;
+      if (widget.changedModels.length === 0) {
+        return;
+      }
+
       widget._trigger('save', null, {
         models: widget.changedModels
       });
@@ -225,10 +245,9 @@
 
         model.save(null, {
           success: function () {
-            if (model.originalAttributes) {
-              // From now on we're going with the values we have on server
-              delete model.originalAttributes;
-            }
+            // From now on we're going with the values we have on server
+            model._originalAttributes = _.clone(model.attributes);
+
             widget._removeLocal(model);
             widget.changedModels.splice(index, 1);
             needed--;
@@ -328,8 +347,8 @@
       if (!local) {
         return;
       }
-      if (!model.originalAttributes) {
-        model.originalAttributes = _.clone(model.attributes);
+      if (!model._originalAttributes) {
+        model._originalAttributes = _.clone(model.attributes);
       }
       var parsed = JSON.parse(local);
       var entity = this.vie.entities.addOrUpdate(parsed, {
@@ -371,9 +390,8 @@
 
       // Restore original object properties
       if (jQuery.isEmptyObject(model.changedAttributes())) {
-        if (model.originalAttributes) {
-          model.set(model.originalAttributes);
-          delete model.originalAttributes;
+        if (model._originalAttributes) {
+          model.set(model._originalAttributes);
         }
         return;
       }

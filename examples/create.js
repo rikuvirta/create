@@ -175,11 +175,14 @@
       highlightColor: '#67cc08',
       // Widgets to use for editing various content types.
       editorWidgets: {
-        'Text': 'halloWidget',
-        'default': 'halloWidget'
+        default: 'hallo' 
       },
       // Additional editor options.
-      editorOptions: {},
+      editorOptions: {
+        hallo: {
+          widget: 'halloWidget'
+        }
+      },
       url: function () {},
       storagePrefix: 'node',
       workflows: {
@@ -214,7 +217,12 @@
           }));
         }
       }
-      this._checkSession();
+
+      var widget = this;
+      window.setTimeout(function () {
+        widget._checkSession();
+      }, 10);
+
       this._enableToolbar();
       this._saveButton();
       this._editButton();
@@ -256,8 +264,29 @@
 
     showNotification: function (options) {
       if (this.element.midgardNotifications) {
-        jQuery(this.element).data('midgardNotifications').create(options);
+        return jQuery(this.element).data('midgardNotifications').create(options);
       }
+    },
+
+    configureEditor: function (name, widget, options) {
+      this.options.editorOptions[name] = {
+        widget: widget,
+        options: options
+      };
+    },
+
+    setEditorForContentType: function (type, editor) {
+      if (this.options.editorOptions[editor] === undefined && editor !== null) {
+        throw new Error("No editor " + editor + " configured");
+      }
+      this.options.editorWidgets[type] = editor;
+    },
+
+    setEditorForProperty: function (property, editor) {
+      if (this.options.editorOptions[editor] === undefined && editor !== null) {
+        throw new Error("No editor " + editor + " configured");
+      }
+      this.options.editorWidgets[property] = editor;
     },
 
     _checkSession: function () {
@@ -337,7 +366,7 @@
         disabled: false,
         vie: widget.vie,
         widgets: widget.options.editorWidgets,
-        editorOptions: widget.options.editorOptions
+        editors: widget.options.editorOptions
       };
       if (widget.options.enableEditor) {
         editableOptions[enableEditor] = widget.options.enableEditor;
@@ -418,11 +447,15 @@
       editables: [],
       collections: [],
       model: null,
-      editorOptions: {},
+      editors: {
+        hallo: {
+          widget: 'halloWidget',
+          options: {}
+        }
+      },
       // the available widgets by data type
       widgets: {
-        'Text': 'halloWidget',
-        'default': 'halloWidget'
+        default: 'hallo'
       },
       collectionWidgets: {
         'default': 'midgardCollectionAdd'
@@ -523,8 +556,6 @@
         element: element,
         entity: this.options.model,
         property: propertyName,
-        editorOptions: this.options.editorOptions,
-        toolbarState: this.options.toolbarState,
         vie: this.vie,
         modified: function (content) {
           var changedProperties = {};
@@ -569,8 +600,8 @@
     },
 
     // returns the name of the widget to use for the given property
-    _widgetName: function (data) {
-      if (this.options.widgets[data.property]) {
+    _editorName: function (data) {
+      if (this.options.widgets[data.property] !== undefined) {
         // Widget configuration set for specific RDF predicate
         return this.options.widgets[data.property];
       }
@@ -584,26 +615,45 @@
           propertyType = type.attributes.get(data.property).range[0];
         }
       }
-      if (this.options.widgets[propertyType]) {
+      if (this.options.widgets[propertyType] !== undefined) {
         return this.options.widgets[propertyType];
       }
       return this.options.widgets['default'];
     },
 
+    _editorWidget: function (editor) {
+      return this.options.editors[editor].widget;
+    },
+
+    _editorOptions: function (editor) {
+      return this.options.editors[editor].options;
+    },
+
     enableEditor: function (data) {
-      var widgetName = this._widgetName(data);
+      var editorName = this._editorName(data);
+      if (editorName === null) {
+        return;
+      }
+
+      var editorWidget = this._editorWidget(editorName);
+
+      data.editorOptions = this._editorOptions(editorName);
       data.disabled = false;
-      if (typeof jQuery(data.element)[widgetName] !== 'function') {
+
+      if (typeof jQuery(data.element)[editorWidget] !== 'function') {
         throw new Error(widgetName + ' widget is not available');
       }
-      jQuery(data.element)[widgetName](data);
-      jQuery(data.element).data('createWidgetName', widgetName);
+
+      jQuery(data.element)[editorWidget](data);
+      jQuery(data.element).data('createWidgetName', editorWidget);
       return jQuery(data.element);
     },
 
     disableEditor: function (data) {
       var widgetName = jQuery(data.element).data('createWidgetName');
+
       data.disabled = true;
+
       if (widgetName) {
         // only if there has been an editing widget registered
         jQuery(data.element)[widgetName](data);
@@ -763,6 +813,7 @@
   // [Hallo](http://hallojs.org) rich text editor.
   jQuery.widget('Create.halloWidget', jQuery.Create.editWidget, {
     options: {
+      editorOptions: {},
       disabled: true,
       toolbarState: 'full',
       vie: null,
@@ -837,14 +888,7 @@
         defaults.showAlways = false;
         defaults.toolbar = 'halloToolbarContextual';
       }
-
-      var editorOptions = {};
-      if (this.options.editorOptions[this.options.property]) {
-        editorOptions = this.options.editorOptions[this.options.property];
-      } else if (this.options.editorOptions['default']) {
-        editorOptions = this.options.editorOptions['default'];
-      }
-      return _.extend(defaults, editorOptions);
+      return _.extend(defaults, this.options.editorOptions);
     }
   });
 })(jQuery);
@@ -998,106 +1042,112 @@
 
           _parent.append(_item);
         },
+        
+       _calculatePositionForGravity: function (item, gravity, target, itemDimensions) {
+          item.find('.' + _classes.item.arrow).addClass(_classes.item.arrow + '_' + gravity);
+          switch (gravity) {
+          case 'TL':
+            return {
+              left: target.left,
+              top: target.top + target.height + 'px'
+            };
+          case 'TR':
+            return {
+              left: target.left + target.width - itemDimensions.width + 'px',
+              top: target.top + target.height + 'px'
+            };
+          case 'BL':
+            return {
+              left: target.left + 'px',
+              top: target.top - itemDimensions.height + 'px'
+            };
+          case 'BR':
+            return {
+              left: target.left + target.width - itemDimensions.width + 'px',
+              top: target.top - itemDimensions.height + 'px'
+            };
+          case 'LT':
+            return {
+              left: target.left + target.width + 'px',
+              top: target.top + 'px'
+            };
+          case 'LB':
+            return {
+              left: target.left + target.width + 'px',
+              top: target.top + target.height - itemDimensions.height + 'px'
+            };
+          case 'RT':
+            return {
+              left: target.left - itemDimensions.width + 'px',
+              top: target.top + 'px'
+            };
+          case 'RB':
+            return {
+              left: target.left - itemDimensions.width + 'px',
+              top: target.top + target.height - itemDimensions.height + 'px'
+            };
+          case 'T':
+            return {
+              left: target.left + target.width / 2 - itemDimensions.width / 2 + 'px',
+              top: target.top + target.height + 'px'
+            };
+          case 'R':
+            return {
+              left: target.left - itemDimensions.width + 'px',
+              top: target.top + target.height / 2 - itemDimensions.height / 2 + 'px'
+            };
+          case 'B':
+            return {
+              left: target.left + target.width / 2 - itemDimensions.width / 2 + 'px',
+              top: target.top - itemDimensions.height + 'px'
+            };
+          case 'L':
+            return {
+              left: target.left + target.width + 'px',
+              top: target.top + target.height / 2 - itemDimensions.height / 2 + 'px'
+            };
+          }
+        },
+        
+        _isFixed: function (element) {
+          if (element === document) {
+            return false;
+          }
+          if (element.css('position') === 'fixed') {
+            return true;
+          }
+          return this._isFixed(element.offsetParent());
+        },
 
         _setPosition: function () {
           if (_config.bindTo) {
-            var width = _item.width() ? _item.width() : 280;
-            var height = _item.height() ? _item.height() : 109;
-
+            itemDimensions = {
+              width: _item.width() ? _item.width() : 280,
+              height: _item.height() ? _item.height() : 109
+            };
+            
             _bind_target = jQuery(_config.bindTo);
-            var trgt_w = _bind_target.outerWidth();
-            var trgt_h = _bind_target.outerHeight();
-            var trgt_l = _bind_target.offset().left;
-            var trgt_t = _bind_target.offset().top;
-
-            switch (_config.gravity) {
-            case 'TL':
-              properties = {
-                'left': trgt_l,
-                'top': trgt_t + trgt_h + 'px'
-              };
-              _item.find('.' + _classes.item.arrow).addClass(_classes.item.arrow + '_TL');
-              break;
-            case 'TR':
-              properties = {
-                'left': trgt_l + trgt_w - width + 'px',
-                'top': trgt_t + trgt_h + 'px'
-              };
-              _item.find('.' + _classes.item.arrow).addClass(_classes.item.arrow + '_TR');
-              break;
-            case 'BL':
-              properties = {
-                'left': trgt_l + 'px',
-                'top': trgt_t - height + 'px'
-              };
-              _item.find('.' + _classes.item.arrow).addClass(_classes.item.arrow + '_BL');
-              break;
-            case 'BR':
-              properties = {
-                'left': trgt_l + trgt_w - width + 'px',
-                'top': trgt_t - height + 'px'
-              };
-              _item.find('.' + _classes.item.arrow).addClass(_classes.item.arrow + '_BR');
-              break;
-            case 'LT':
-              properties = {
-                'left': trgt_l + trgt_w + 'px',
-                'top': trgt_t + 'px'
-              };
-              _item.find('.' + _classes.item.arrow).addClass(_classes.item.arrow + '_LT');
-              break;
-            case 'LB':
-              properties = {
-                'left': trgt_l + trgt_w + 'px',
-                'top': trgt_t + trgt_h - height + 'px'
-              };
-              _item.find('.' + _classes.item.arrow).addClass(_classes.item.arrow + '_LB');
-              break;
-            case 'RT':
-              properties = {
-                'left': trgt_l - width + 'px',
-                'top': trgt_t + 'px'
-              };
-              _item.find('.' + _classes.item.arrow).addClass(_classes.item.arrow + '_RT');
-              break;
-            case 'RB':
-              properties = {
-                'left': trgt_l - width + 'px',
-                'top': trgt_t + trgt_h - height + 'px'
-              };
-              _item.find('.' + _classes.item.arrow).addClass(_classes.item.arrow + '_RB');
-              break;
-            case 'T':
-              properties = {
-                'left': trgt_l + trgt_w / 2 - width / 2 + 'px',
-                'top': trgt_t + trgt_h + 'px'
-              };
-              _item.find('.' + _classes.item.arrow).addClass(_classes.item.arrow + '_T');
-              break;
-            case 'R':
-              properties = {
-                'left': trgt_l - width + 'px',
-                'top': trgt_t + trgt_h / 2 - height / 2 + 'px'
-              };
-              _item.find('.' + _classes.item.arrow).addClass(_classes.item.arrow + '_R');
-              break;
-            case 'B':
-              properties = {
-                'left': trgt_l + trgt_w / 2 - width / 2 + 'px',
-                'top': trgt_t - height + 'px'
-              };
-              _item.find('.' + _classes.item.arrow).addClass(_classes.item.arrow + '_B');
-              break;
-            case 'L':
-              properties = {
-                'left': trgt_l + trgt_w + 'px',
-                'top': trgt_t + trgt_h / 2 - height / 2 + 'px'
-              };
-              _item.find('.' + _classes.item.arrow).addClass(_classes.item.arrow + '_L');
-              break;
+            var properties = {};
+            
+            var targetDimensions = {
+              width: _bind_target.outerWidth(),
+              height: _bind_target.outerHeight()
+            };
+            
+            if (this._isFixed(_bind_target)) {
+              properties.position = 'fixed';
+              targetDimensions.left = _bind_target.offset().left;
+              targetDimensions.top = _bind_target.position().top;
+            } else {
+              properties.position = 'absolute';
+              targetDimensions.left = _bind_target.offset().left;
+              targetDimensions.top = _bind_target.offset().top;
             }
+            
+            var pos = this._calculatePositionForGravity(_item, _config.gravity, targetDimensions, itemDimensions);
+            properties.top = pos.top;
+            properties.left = pos.left;
 
-            properties.position = 'absolute';
             _item.css(properties);
 
             return;
@@ -1514,6 +1564,7 @@
     options: {
       // Whether to use localstorage
       localStorage: false,
+      removeLocalstorageOnIgnore: true,
       // VIE instance to use for storage handling
       vie: null,
       // URL callback for Backbone.sync
@@ -1612,6 +1663,7 @@
     _bindEditables: function () {
       var widget = this;
       var restorables = [];
+      var restorer;
 
       widget.element.bind('midgardeditablechanged', function (event, options) {
         if (_.indexOf(widget.changedModels, options.instance) === -1) {
@@ -1629,6 +1681,11 @@
       widget.element.bind('midgardeditableenable', function (event, options) {
         jQuery('#midgardcreate-save').button({disabled: true});
         jQuery('#midgardcreate-save').show();
+
+        if (!options.instance._originalAttributes) {
+          options.instance._originalAttributes = _.clone(options.instance.attributes);
+        }
+
         if (!options.instance.isNew() && widget._checkLocal(options.instance)) {
           // We have locally-stored modifications, user needs to be asked
           restorables.push(options.instance);
@@ -1644,10 +1701,13 @@
       widget.element.bind('midgardcreatestatechange', function (event, options) {
         if (options.state === 'browse' || restorables.length === 0) {
           restorables = [];
+          if (restorer) {
+            restorer.close();
+          }
           return;
         }
         
-        jQuery('body').data('midgardCreate').showNotification({
+        restorer = jQuery('body').data('midgardCreate').showNotification({
           bindTo: '#midgardcreate-edit a',
           gravity: 'TR',
           body: restorables.length + " items on this page have local modifications",
@@ -1657,10 +1717,11 @@
               name: 'restore',
               label: 'Restore',
               cb: function() {
-                _.each(restorables, function(instance) {
+                _.each(restorables, function (instance) {
                   widget._readLocal(instance);
                 });
                 restorables = [];
+                restorer = null;
               },
               className: 'create-ui-btn'
             },
@@ -1668,9 +1729,14 @@
               name: 'ignore',
               label: 'Ignore',
               cb: function(event, notification) {
-                // TODO: Clear from localStorage?
+                if (widget.options.removeLocalstorageOnIgnore) {
+                  _.each(restorables, function (instance) {
+                    widget._removeLocal(instance);
+                  });
+                }
                 notification.close();
                 restorables = [];
+                restorer = null;
               },
               className: 'create-ui-btn'
             }
@@ -1690,6 +1756,10 @@
 
     _saveRemote: function (options) {
       var widget = this;
+      if (widget.changedModels.length === 0) {
+        return;
+      }
+
       widget._trigger('save', null, {
         models: widget.changedModels
       });
@@ -1729,10 +1799,9 @@
 
         model.save(null, {
           success: function () {
-            if (model.originalAttributes) {
-              // From now on we're going with the values we have on server
-              delete model.originalAttributes;
-            }
+            // From now on we're going with the values we have on server
+            model._originalAttributes = _.clone(model.attributes);
+
             widget._removeLocal(model);
             widget.changedModels.splice(index, 1);
             needed--;
@@ -1832,8 +1901,8 @@
       if (!local) {
         return;
       }
-      if (!model.originalAttributes) {
-        model.originalAttributes = _.clone(model.attributes);
+      if (!model._originalAttributes) {
+        model._originalAttributes = _.clone(model.attributes);
       }
       var parsed = JSON.parse(local);
       var entity = this.vie.entities.addOrUpdate(parsed, {
@@ -1875,9 +1944,8 @@
 
       // Restore original object properties
       if (jQuery.isEmptyObject(model.changedAttributes())) {
-        if (model.originalAttributes) {
-          model.set(model.originalAttributes);
-          delete model.originalAttributes;
+        if (model._originalAttributes) {
+          model.set(model._originalAttributes);
         }
         return;
       }
